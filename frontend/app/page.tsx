@@ -61,6 +61,10 @@ export default function Page() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | undefined>(undefined);
 
+  // ── Async states ──
+  const [isWakingUp, setIsWakingUp] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // ── Search & filter ──
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"All" | "Active" | "Completed" | "Overdue">("All");
@@ -86,15 +90,25 @@ export default function Page() {
 
   // ── Fetch tasks on mount ──
   const fetchTasks = useCallback(async () => {
+    let wakeUpTimeout: NodeJS.Timeout;
     try {
       setLoading(true);
       clearError();
+      setIsWakingUp(false);
+      
+      // If the backend takes more than 5s, it's likely a cold start
+      wakeUpTimeout = setTimeout(() => {
+        setIsWakingUp(true);
+      }, 5000);
+
       const data = await api.getTasks();
       setTasks(data);
     } catch (err: unknown) {
       showError(err instanceof Error ? err.message : "Failed to load tasks.");
     } finally {
+      clearTimeout(wakeUpTimeout!);
       setLoading(false);
+      setIsWakingUp(false);
     }
   }, []);
 
@@ -138,20 +152,15 @@ export default function Page() {
   // ── Save edited task ──
   const handleSaveTask = async (data: EditTaskData) => {
     if (!selectedTask) return;
-
-    try {
-      const updated = await api.updateTask(selectedTask.id, {
-        title: data.title,
-        description: data.description || null,
-        priority: data.priority.toLowerCase() as "low" | "medium" | "high",
-        due_date: data.dueDate || null,
-      });
-      setTasks(prev => prev.map(t => (t.id === selectedTask.id ? updated : t)));
-      setEditModalOpen(false);
-      setSelectedTask(undefined);
-    } catch (err: unknown) {
-      showError(err instanceof Error ? err.message : "Failed to update task.");
-    }
+    const updated = await api.updateTask(selectedTask.id, {
+      title: data.title,
+      description: data.description || null,
+      priority: data.priority.toLowerCase() as "low" | "medium" | "high",
+      due_date: data.dueDate || null,
+    });
+    setTasks(prev => prev.map(t => (t.id === selectedTask.id ? updated : t)));
+    setEditModalOpen(false);
+    setSelectedTask(undefined);
   };
 
   // ── Open delete modal ──
@@ -163,15 +172,10 @@ export default function Page() {
   // ── Confirm delete ──
   const handleConfirmDelete = async () => {
     if (!selectedTask) return;
-
-    try {
-      await api.deleteTask(selectedTask.id);
-      setTasks(prev => prev.filter(t => t.id !== selectedTask.id));
-      setDeleteModalOpen(false);
-      setSelectedTask(undefined);
-    } catch (err: unknown) {
-      showError(err instanceof Error ? err.message : "Failed to delete task.");
-    }
+    await api.deleteTask(selectedTask.id);
+    setTasks(prev => prev.filter(t => t.id !== selectedTask.id));
+    setDeleteModalOpen(false);
+    setSelectedTask(undefined);
   };
 
   // ── Desktop create task ──
@@ -190,6 +194,7 @@ export default function Page() {
     };
 
     try {
+      setIsSubmitting(true);
       const created = await api.createTask(input);
       setTasks(prev => [created, ...prev]);
       setDesktopTitle("");
@@ -199,13 +204,18 @@ export default function Page() {
       setShowDesktopError(false);
     } catch (err: unknown) {
       showError(err instanceof Error ? err.message : "Failed to create task.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   // ── Mobile create task ──
   const handleCreateMobileTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!mobileTitle.trim()) return;
+    if (!mobileTitle.trim()) {
+      showError("Task title is required");
+      return;
+    }
 
     const input: TaskCreateInput = {
       title: mobileTitle.trim(),
@@ -213,11 +223,14 @@ export default function Page() {
     };
 
     try {
+      setIsSubmitting(true);
       const created = await api.createTask(input);
       setTasks(prev => [created, ...prev]);
       setMobileTitle("");
     } catch (err: unknown) {
       showError(err instanceof Error ? err.message : "Failed to create task.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -271,9 +284,20 @@ export default function Page() {
           <div className="mb-lg flex items-center gap-md bg-error-container text-on-error-container p-md rounded-lg border border-error/30 animate-in fade-in duration-200">
             <span className="material-symbols-outlined text-error shrink-0">error</span>
             <p className="text-body-md flex-1">{error}</p>
+            <button type="button" onClick={fetchTasks} className="px-sm py-xs bg-error text-on-error rounded font-label-md shrink-0 hover:opacity-90 transition-opacity">
+              Retry
+            </button>
             <button type="button" onClick={clearError} className="p-xs rounded hover:bg-error/10 transition-colors shrink-0">
               <span className="material-symbols-outlined text-error text-[18px]">close</span>
             </button>
+          </div>
+        )}
+
+        {/* ── Waking up banner ── */}
+        {isWakingUp && !error && (
+          <div className="mb-lg flex items-center gap-md bg-secondary-container text-on-secondary-container p-md rounded-lg border border-secondary/30 animate-in fade-in duration-200">
+            <span className="material-symbols-outlined text-secondary shrink-0 animate-spin">sync</span>
+            <p className="text-body-md flex-1">Waking up server, this may take a moment...</p>
           </div>
         )}
 
@@ -302,8 +326,8 @@ export default function Page() {
                     <span className="material-symbols-outlined">flag</span>
                   </button>
                 </div>
-                <button type="submit" className="px-lg h-10 bg-primary text-on-primary rounded font-label-md text-label-md active:scale-95 transition-all shadow-sm">
-                  Create Task
+                <button type="submit" disabled={isSubmitting} className="px-lg h-10 bg-primary text-on-primary rounded font-label-md text-label-md active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                  {isSubmitting ? "Creating..." : "Create Task"}
                 </button>
               </div>
             </form>
@@ -436,9 +460,13 @@ export default function Page() {
                     />
                   </div>
                 </div>
-                <button type="submit" className="w-full h-11 bg-primary text-on-primary font-bold rounded-lg hover:bg-on-surface-variant transition-standard active:scale-95 flex items-center justify-center gap-2 mt-2">
-                  <span className="material-symbols-outlined text-[20px]">add</span>
-                  Add Task
+                <button type="submit" disabled={isSubmitting} className="w-full h-11 bg-primary text-on-primary font-bold rounded-lg hover:bg-on-surface-variant transition-standard active:scale-95 flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                  {isSubmitting ? (
+                    <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
+                  ) : (
+                    <span className="material-symbols-outlined text-[20px]">add</span>
+                  )}
+                  {isSubmitting ? "Adding..." : "Add Task"}
                 </button>
               </form>
             </div>

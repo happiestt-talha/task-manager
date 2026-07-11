@@ -3,7 +3,7 @@ import React from 'react';
 export interface DeleteConfirmModalProps {
   isOpen: boolean;
   taskTitle?: string;
-  onConfirm?: () => void;
+  onConfirm?: () => Promise<void>;
   onCancel?: () => void;
 }
 
@@ -13,6 +13,30 @@ export function DeleteConfirmModal({
   onConfirm,
   onCancel,
 }: DeleteConfirmModalProps) {
+  const [isDeleting, setIsDeleting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // Reset state when modal opens/closes
+  React.useEffect(() => {
+    if (isOpen) {
+      setError(null);
+      setIsDeleting(false);
+    }
+  }, [isOpen]);
+
+  const handleConfirm = async () => {
+    if (!onConfirm) return;
+    setError(null);
+    setIsDeleting(true);
+    try {
+      await onConfirm();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to delete task.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -62,6 +86,25 @@ export function DeleteConfirmModal({
               delete_forever
             </span>
           </div>
+
+          {error && (
+            <div style={{
+              backgroundColor: 'rgba(186,26,26,0.1)',
+              color: '#ba1a1a',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              fontSize: '14px',
+              marginBottom: '16px',
+              textAlign: 'left',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>error</span>
+              <span>{error}</span>
+            </div>
+          )}
+
           <h2
             id="modal-title"
             style={{
@@ -113,12 +156,19 @@ export function DeleteConfirmModal({
                 color: '#ffffff',
                 fontWeight: 600,
                 fontSize: '12px',
-                cursor: 'pointer',
+                cursor: isDeleting ? 'not-allowed' : 'pointer',
+                opacity: isDeleting ? 0.5 : 1,
                 boxShadow: '0 1px 3px 0 rgba(0,0,0,0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
               }}
-              onClick={onConfirm}
+              disabled={isDeleting}
+              onClick={handleConfirm}
             >
-              Delete
+              {isDeleting && <span className="material-symbols-outlined" style={{ fontSize: '16px', animation: 'spin 1s linear infinite' }}>sync</span>}
+              {isDeleting ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>

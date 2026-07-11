@@ -12,7 +12,7 @@ export interface EditTaskModalProps {
   task?: EditTaskData;
   isOpen: boolean;
   onClose?: () => void;
-  onSave?: (task: EditTaskData) => void;
+  onSave?: (task: EditTaskData) => Promise<void>;
 }
 
 export function EditTaskModal({
@@ -35,6 +35,8 @@ export function EditTaskModal({
   const [description, setDescription] = useState(initialTask.description);
   const [priority, setPriority] = useState(initialTask.priority);
   const [dueDate, setDueDate] = useState(initialTask.dueDate);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Sync state with task prop when it changes or modal opens
   useEffect(() => {
@@ -44,20 +46,32 @@ export function EditTaskModal({
       setDescription(activeTask.description);
       setPriority(activeTask.priority);
       setDueDate(activeTask.dueDate);
+      setError(null);
+      setIsSaving(false);
     }
   }, [task, isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    onSave?.({
-      ...initialTask,
-      title,
-      description,
-      priority,
-      dueDate,
-    });
+    if (!onSave) return;
+    
+    setError(null);
+    setIsSaving(true);
+    try {
+      await onSave({
+        ...initialTask,
+        title,
+        description,
+        priority,
+        dueDate,
+      });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save task.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -78,6 +92,13 @@ export function EditTaskModal({
 
         {/* Modal Content (Form) */}
         <form className="p-lg space-y-lg" onSubmit={handleSubmit}>
+          {error && (
+            <div className="bg-error-container text-on-error-container p-sm rounded border border-error/30 text-label-md flex items-start gap-sm">
+              <span className="material-symbols-outlined text-[18px]">error</span>
+              <p>{error}</p>
+            </div>
+          )}
+
           {/* Title Field */}
           <div className="space-y-xs">
             <label className="text-label-md text-on-surface-variant font-medium block">Task Title</label>
@@ -152,10 +173,12 @@ export function EditTaskModal({
           </button>
           <button
             type="button"
-            className="px-lg py-sm rounded-lg bg-primary text-on-primary text-label-md font-bold shadow-md hover:opacity-90 active:scale-95 transition-all"
+            disabled={isSaving}
+            className="px-lg py-sm rounded-lg bg-primary text-on-primary text-label-md font-bold shadow-md hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-sm"
             onClick={() => handleSubmit()}
           >
-            Save Changes
+            {isSaving && <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>}
+            {isSaving ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>
