@@ -56,7 +56,7 @@ export function EditTaskModal({
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!onSave) return;
-    
+
     setError(null);
     setIsSaving(true);
     try {
@@ -76,9 +76,7 @@ export function EditTaskModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-md bg-black/50 backdrop-blur-sm transition-opacity duration-300">
-      {/* EDIT TASK MODAL CARD */}
       <div className="bg-white w-full max-w-[500px] rounded-lg shadow-2xl overflow-hidden border border-outline-variant">
-        {/* Modal Header */}
         <div className="px-lg py-md border-b border-outline-variant flex justify-between items-center bg-white">
           <h2 className="text-title-lg text-on-surface">Edit Task</h2>
           <button
@@ -90,7 +88,6 @@ export function EditTaskModal({
           </button>
         </div>
 
-        {/* Modal Content (Form) */}
         <form className="p-lg space-y-lg" onSubmit={handleSubmit}>
           {error && (
             <div className="bg-error-container text-on-error-container p-sm rounded border border-error/30 text-label-md flex items-start gap-sm">
@@ -99,7 +96,6 @@ export function EditTaskModal({
             </div>
           )}
 
-          {/* Title Field */}
           <div className="space-y-xs">
             <label className="text-label-md text-on-surface-variant font-medium block">Task Title</label>
             <input
@@ -111,7 +107,6 @@ export function EditTaskModal({
             />
           </div>
 
-          {/* Description Field */}
           <div className="space-y-xs">
             <label className="text-label-md text-on-surface-variant font-medium block">Description</label>
             <textarea
@@ -122,7 +117,6 @@ export function EditTaskModal({
             />
           </div>
 
-          {/* Priority & Due Date Row */}
           <div className="grid grid-cols-2 gap-lg">
             <div className="space-y-xs">
               <label className="text-label-md text-on-surface-variant font-medium block">Priority</label>
@@ -158,11 +152,8 @@ export function EditTaskModal({
             </div>
           </div>
 
-          {/* Optional Task Owner */}
-
         </form>
 
-        {/* Modal Actions */}
         <div className="px-lg py-md border-t border-outline-variant bg-surface-container-low/30 flex justify-end items-center gap-md">
           <button
             type="button"

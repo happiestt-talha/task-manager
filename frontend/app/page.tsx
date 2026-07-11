@@ -1,30 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { TaskCard } from "@/components/TaskCard";
 import { EditTaskModal, EditTaskData } from "@/components/EditTaskModal";
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
-import { api } from "@/lib/api";
-import { Task, TaskCreateInput } from "@/lib/types";
+import { useTasksQuery } from "@/hooks/queries/useTasksQuery";
+import { useCreateTask, useUpdateTask, useDeleteTask } from "@/hooks/queries/useTaskMutations";
+import { Task, TaskCreateInput } from "@/types/task";
+import { WeatherWidget } from "@/components/WeatherWidget";
 
-// ── Helpers: map between backend types and UI display ────────────────────────
-
-/** Capitalize first letter: "high" → "High" */
 const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** Derive TaskCard status from backend Task */
 const taskStatus = (t: Task): "active" | "completed" | "regular" =>
   t.completed ? "completed" : t.priority === "high" ? "active" : "regular";
 
-/** Display-friendly priority label */
 const displayPriority = (p: string): "High" | "Medium" | "Low" =>
   capitalize(p) as "High" | "Medium" | "Low";
 
-/** Format ISO date string to short label (e.g. "Jul 11") or fallback */
 const formatDateLabel = (iso: string | null): string => {
   if (!iso) return "";
   try {
-    const d = new Date(iso + "T00:00:00"); // avoid timezone shift
+    const d = new Date(iso + "T00:00:00");
     if (isNaN(d.getTime())) return iso;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -39,7 +35,6 @@ const formatDateLabel = (iso: string | null): string => {
   }
 };
 
-/** Map backend Task → EditTaskData for the edit modal */
 const toEditData = (t: Task): EditTaskData => ({
   id: t.id,
   title: t.title,
@@ -48,39 +43,52 @@ const toEditData = (t: Task): EditTaskData => ({
   dueDate: t.due_date ?? "",
 });
 
-// ── Component ────────────────────────────────────────────────────────────────
-
 export default function Page() {
-  // ── Core state ──
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: tasks = [], isLoading, error: queryError, refetch } = useTasksQuery();
+  const createTaskMutation = useCreateTask();
+  const updateTaskMutation = useUpdateTask();
+  const deleteTaskMutation = useDeleteTask();
 
-  // ── Modal state ──
+  const [error, setError] = useState<string | null>(null);
+  const [isWakingUp, setIsWakingUp] = useState(false);
+
+  const queryErrorMessage = queryError instanceof Error ? queryError.message : (queryError ? String(queryError) : null);
+  useEffect(() => {
+    if (queryErrorMessage) {
+      setError(queryErrorMessage);
+      const timer = setTimeout(() => setError(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [queryErrorMessage]);
+
+  useEffect(() => {
+    let wakeUpTimeout: NodeJS.Timeout;
+    if (isLoading) {
+      setIsWakingUp(false);
+      wakeUpTimeout = setTimeout(() => {
+        setIsWakingUp(true);
+      }, 5000);
+    } else {
+      setIsWakingUp(false);
+    }
+    return () => clearTimeout(wakeUpTimeout);
+  }, [isLoading]);
+
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | undefined>(undefined);
 
-  // ── Async states ──
-  const [isWakingUp, setIsWakingUp] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // ── Search & filter ──
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"All" | "Active" | "Completed" | "Overdue">("All");
 
-
-  // ── Desktop create-form ──
   const [desktopTitle, setDesktopTitle] = useState("");
   const [desktopDesc, setDesktopDesc] = useState("");
   const [desktopPriority, setDesktopPriority] = useState<"low" | "medium" | "high">("medium");
   const [desktopDate, setDesktopDate] = useState("");
   const [showDesktopError, setShowDesktopError] = useState(false);
 
-  // ── Mobile create-form ──
   const [mobileTitle, setMobileTitle] = useState("");
 
-  // ── Helpers ──
   const clearError = () => setError(null);
 
   const showError = (msg: string) => {
@@ -88,97 +96,59 @@ export default function Page() {
     setTimeout(() => setError(null), 6000);
   };
 
-  // ── Fetch tasks on mount ──
-  const fetchTasks = useCallback(async () => {
-    let wakeUpTimeout: NodeJS.Timeout;
+  const handleToggleStatus = async (task: Task) => {
     try {
-      setLoading(true);
-      clearError();
-      setIsWakingUp(false);
-      
-      // If the backend takes more than 5s, it's likely a cold start
-      wakeUpTimeout = setTimeout(() => {
-        setIsWakingUp(true);
-      }, 5000);
-
-      const data = await api.getTasks();
-      setTasks(data);
+      await updateTaskMutation.mutateAsync({
+        id: task.id,
+        input: { completed: !task.completed },
+      });
     } catch (err: unknown) {
-      showError(err instanceof Error ? err.message : "Failed to load tasks.");
-    } finally {
-      clearTimeout(wakeUpTimeout!);
-      setLoading(false);
-      setIsWakingUp(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
-
-  // ── Toggle completed ──
-  const handleToggleStatus = async (taskId: string) => {
-    const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-
-    // Optimistic update
-    const newCompleted = !task.completed;
-    setTasks(prev =>
-      prev.map(t =>
-        t.id === taskId ? { ...t, completed: newCompleted } : t
-      )
-    );
-
-    try {
-      const updated = await api.updateTask(taskId, { completed: newCompleted });
-      setTasks(prev => prev.map(t => (t.id === taskId ? updated : t)));
-    } catch (err: unknown) {
-      // Revert
-      setTasks(prev =>
-        prev.map(t =>
-          t.id === taskId ? { ...t, completed: task.completed } : t
-        )
-      );
       showError(err instanceof Error ? err.message : "Failed to update task status.");
     }
   };
 
-  // ── Open edit modal ──
   const handleOpenEdit = (task: Task) => {
     setSelectedTask(task);
     setEditModalOpen(true);
   };
 
-  // ── Save edited task ──
   const handleSaveTask = async (data: EditTaskData) => {
     if (!selectedTask) return;
-    const updated = await api.updateTask(selectedTask.id, {
-      title: data.title,
-      description: data.description || null,
-      priority: data.priority.toLowerCase() as "low" | "medium" | "high",
-      due_date: data.dueDate || null,
-    });
-    setTasks(prev => prev.map(t => (t.id === selectedTask.id ? updated : t)));
-    setEditModalOpen(false);
-    setSelectedTask(undefined);
+    try {
+      await updateTaskMutation.mutateAsync({
+        id: selectedTask.id,
+        input: {
+          title: data.title,
+          description: data.description || null,
+          priority: data.priority.toLowerCase() as "low" | "medium" | "high",
+          due_date: data.dueDate || null,
+        },
+      });
+      setEditModalOpen(false);
+      setSelectedTask(undefined);
+    } catch (err: unknown) {
+      showError(err instanceof Error ? err.message : "Failed to save task.");
+      throw err;
+    }
   };
 
-  // ── Open delete modal ──
   const handleOpenDelete = (task: Task) => {
     setSelectedTask(task);
     setDeleteModalOpen(true);
   };
 
-  // ── Confirm delete ──
   const handleConfirmDelete = async () => {
     if (!selectedTask) return;
-    await api.deleteTask(selectedTask.id);
-    setTasks(prev => prev.filter(t => t.id !== selectedTask.id));
-    setDeleteModalOpen(false);
-    setSelectedTask(undefined);
+    try {
+      await deleteTaskMutation.mutateAsync(selectedTask.id);
+      setDeleteModalOpen(false);
+      setSelectedTask(undefined);
+    } catch (err: unknown) {
+      showError(err instanceof Error ? err.message : "Failed to delete task.");
+      throw err;
+    }
   };
 
-  // ── Desktop create task ──
   const handleCreateDesktopTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!desktopTitle.trim()) {
@@ -194,9 +164,7 @@ export default function Page() {
     };
 
     try {
-      setIsSubmitting(true);
-      const created = await api.createTask(input);
-      setTasks(prev => [created, ...prev]);
+      await createTaskMutation.mutateAsync(input);
       setDesktopTitle("");
       setDesktopDesc("");
       setDesktopPriority("medium");
@@ -204,12 +172,9 @@ export default function Page() {
       setShowDesktopError(false);
     } catch (err: unknown) {
       showError(err instanceof Error ? err.message : "Failed to create task.");
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  // ── Mobile create task ──
   const handleCreateMobileTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!mobileTitle.trim()) {
@@ -223,18 +188,14 @@ export default function Page() {
     };
 
     try {
-      setIsSubmitting(true);
-      const created = await api.createTask(input);
-      setTasks(prev => [created, ...prev]);
+      await createTaskMutation.mutateAsync(input);
       setMobileTitle("");
     } catch (err: unknown) {
       showError(err instanceof Error ? err.message : "Failed to create task.");
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  // ── Filter & search logic ──
+
   const filteredTasks = tasks.filter(task => {
     const q = searchQuery.toLowerCase();
     const matchesSearch =
@@ -254,11 +215,8 @@ export default function Page() {
 
   const completedCount = tasks.filter(t => t.completed).length;
 
-  // ────────────────────────────── JSX ──────────────────────────────────
-
   return (
     <>
-      {/* TopNavBar */}
       <header className="sticky top-0 z-50 bg-surface-container-lowest dark:bg-inverse-surface border-b border-outline-variant dark:border-outline shadow-sm w-full transition-standard">
         <div className="max-w-container-max mx-auto px-md md:px-lg py-md flex justify-between items-center h-16">
           <div className="flex items-center gap-sm md:gap-xl">
@@ -270,21 +228,23 @@ export default function Page() {
         </div>
       </header>
 
-      {/* Main Canvas */}
       <main className="flex-grow w-full max-w-container-max mx-auto px-md md:px-lg py-lg md:py-2xl space-y-lg md:space-y-0">
 
-        {/* Header Section */}
-        <section className="mb-lg md:mb-3xl space-y-xs">
-          <h1 className="text-headline-lg-mobile md:text-headline-lg font-bold text-on-surface tracking-tight">My Tasks</h1>
-          <p className="text-body-lg text-on-surface-variant mt-xs">Stay on track and organized.</p>
+        <section className="mb-lg md:mb-3xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-md">
+          <div className="space-y-xs">
+            <h1 className="text-headline-lg-mobile md:text-headline-lg font-bold text-on-surface tracking-tight">My Tasks</h1>
+            <p className="text-body-lg text-on-surface-variant mt-xs">Stay on track and organized.</p>
+          </div>
+          <div className="shrink-0">
+            <WeatherWidget />
+          </div>
         </section>
 
-        {/* ── Error banner ── */}
         {error && (
           <div className="mb-lg flex items-center gap-md bg-error-container text-on-error-container p-md rounded-lg border border-error/30 animate-in fade-in duration-200">
             <span className="material-symbols-outlined text-error shrink-0">error</span>
             <p className="text-body-md flex-1">{error}</p>
-            <button type="button" onClick={fetchTasks} className="px-sm py-xs bg-error text-on-error rounded font-label-md shrink-0 hover:opacity-90 transition-opacity">
+            <button type="button" onClick={() => refetch()} className="px-sm py-xs bg-error text-on-error rounded font-label-md shrink-0 hover:opacity-90 transition-opacity">
               Retry
             </button>
             <button type="button" onClick={clearError} className="p-xs rounded hover:bg-error/10 transition-colors shrink-0">
@@ -293,7 +253,6 @@ export default function Page() {
           </div>
         )}
 
-        {/* ── Waking up banner ── */}
         {isWakingUp && !error && (
           <div className="mb-lg flex items-center gap-md bg-secondary-container text-on-secondary-container p-md rounded-lg border border-secondary/30 animate-in fade-in duration-200">
             <span className="material-symbols-outlined text-secondary shrink-0 animate-spin">sync</span>
@@ -301,11 +260,7 @@ export default function Page() {
           </div>
         )}
 
-        {/* ═══════════════════════════════════════════════════════════════════ */}
-        {/*  MOBILE LAYOUT  (<md)                                              */}
-        {/* ═══════════════════════════════════════════════════════════════════ */}
         <div className="md:hidden space-y-lg">
-          {/* Mobile Create Task */}
           <section className="bg-surface-container-lowest border border-outline-variant rounded p-md shadow-sm">
             <form className="flex flex-col gap-md" onSubmit={handleCreateMobileTask}>
               <div className="relative">
@@ -326,14 +281,13 @@ export default function Page() {
                     <span className="material-symbols-outlined">flag</span>
                   </button>
                 </div>
-                <button type="submit" disabled={isSubmitting} className="px-lg h-10 bg-primary text-on-primary rounded font-label-md text-label-md active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                  {isSubmitting ? "Creating..." : "Create Task"}
+                <button type="submit" disabled={createTaskMutation.isPending} className="px-lg h-10 bg-primary text-on-primary rounded font-label-md text-label-md active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                  {createTaskMutation.isPending ? "Creating..." : "Create Task"}
                 </button>
               </div>
             </form>
           </section>
 
-          {/* Mobile Search & Filter */}
           <section className="flex flex-col gap-sm">
             <div className="relative w-full">
               <span className="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">search</span>
@@ -363,9 +317,8 @@ export default function Page() {
             </div>
           </section>
 
-          {/* Mobile Task List */}
           <section className="space-y-md pb-xl">
-            {loading ? (
+            {isLoading ? (
               <>
                 <TaskCard status="skeleton" />
                 <TaskCard status="skeleton" />
@@ -385,7 +338,7 @@ export default function Page() {
                   date={formatDateLabel(task.due_date)}
                   priority={displayPriority(task.priority)}
                   completedAt={task.completed ? `Completed at ${new Date(task.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : undefined}
-                  onToggleStatus={() => handleToggleStatus(task.id)}
+                  onToggleStatus={() => handleToggleStatus(task)}
                   onEdit={() => handleOpenEdit(task)}
                   onDelete={() => handleOpenDelete(task)}
                 />
@@ -396,12 +349,8 @@ export default function Page() {
           </section>
         </div>
 
-        {/* ═══════════════════════════════════════════════════════════════════ */}
-        {/*  DESKTOP LAYOUT  (≥md)                                             */}
-        {/* ═══════════════════════════════════════════════════════════════════ */}
         <div className="hidden md:grid grid-cols-1 lg:grid-cols-12 gap-lg items-start">
 
-          {/* Left Column: Create Task */}
           <aside className="lg:col-span-4 space-y-lg">
             <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-lg shadow-sm">
               <h2 className="text-title-lg font-bold mb-md text-on-surface">Create Task</h2>
@@ -460,18 +409,17 @@ export default function Page() {
                     />
                   </div>
                 </div>
-                <button type="submit" disabled={isSubmitting} className="w-full h-11 bg-primary text-on-primary font-bold rounded-lg hover:bg-on-surface-variant transition-standard active:scale-95 flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {isSubmitting ? (
+                <button type="submit" disabled={createTaskMutation.isPending} className="w-full h-11 bg-primary text-on-primary font-bold rounded-lg hover:bg-on-surface-variant transition-standard active:scale-95 flex items-center justify-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                  {createTaskMutation.isPending ? (
                     <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
                   ) : (
                     <span className="material-symbols-outlined text-[20px]">add</span>
                   )}
-                  {isSubmitting ? "Adding..." : "Add Task"}
+                  {createTaskMutation.isPending ? "Adding..." : "Add Task"}
                 </button>
               </form>
             </div>
 
-            {/* Summary Card */}
             <div className="bg-primary text-on-primary p-lg rounded-lg border border-primary">
               <p className="text-label-sm uppercase tracking-wider opacity-80">Task Summary</p>
               <p className="text-headline-lg font-bold mt-1">{completedCount} Done</p>
@@ -487,9 +435,7 @@ export default function Page() {
             </div>
           </aside>
 
-          {/* Right Column: Task List */}
           <section className="lg:col-span-8 space-y-md">
-            {/* Toolbar */}
             <div className="flex flex-col sm:flex-row justify-between items-center gap-md bg-surface-container-low p-md rounded-lg border border-outline-variant">
               <div className="flex items-center gap-md">
                 <span className="text-body-md font-bold text-on-surface">
@@ -527,9 +473,8 @@ export default function Page() {
               </div>
             </div>
 
-            {/* Task Cards */}
             <div className="space-y-sm">
-              {loading ? (
+              {isLoading ? (
                 <>
                   <TaskCard status="skeleton" />
                   <TaskCard status="skeleton" />
@@ -554,7 +499,7 @@ export default function Page() {
                         ? `Completed at ${new Date(task.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
                         : undefined
                     }
-                    onToggleStatus={() => handleToggleStatus(task.id)}
+                    onToggleStatus={() => handleToggleStatus(task)}
                     onEdit={() => handleOpenEdit(task)}
                     onDelete={() => handleOpenDelete(task)}
                   />
@@ -588,7 +533,6 @@ export default function Page() {
         </div>
       </footer>
 
-      {/* Edit Task Modal */}
       <EditTaskModal
         isOpen={editModalOpen}
         task={selectedTask ? toEditData(selectedTask) : undefined}
@@ -599,7 +543,6 @@ export default function Page() {
         onSave={handleSaveTask}
       />
 
-      {/* Delete Confirmation Modal */}
       <DeleteConfirmModal
         isOpen={deleteModalOpen}
         taskTitle={selectedTask?.title}

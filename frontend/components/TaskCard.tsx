@@ -57,10 +57,8 @@ export function TaskCard({
               <h3 className="text-body-lg md:text-body-md font-semibold md:font-medium text-on-surface-variant line-through truncate">{title}</h3>
               {completedAt && <p className="text-label-md text-on-surface-variant opacity-70 mt-xs">{completedAt}</p>}
               <div className="flex items-center gap-md mt-md">
-                {/* Mobile Done badge */}
                 <span className="text-label-sm font-label-sm text-on-surface-variant px-sm py-0.5 bg-surface-container rounded-full md:hidden">Done</span>
                 
-                {/* Desktop Completed badge */}
                 <div className="hidden md:flex items-center gap-1 text-label-md text-on-surface-variant bg-surface-container-highest px-2 py-0.5 rounded-full">
                   <span className="material-symbols-outlined text-[14px]">verified</span>
                   Completed
@@ -83,20 +81,16 @@ export function TaskCard({
 
   const isActive = status === 'active';
   
-  // Outer container classes
-  // Desktop active has primary left border, mobile active (with High/Urgent priority) might show left-border-error
   const borderLeftClass = isActive 
     ? "border-l-4 border-l-primary" 
     : (priority === 'High' ? "border-l-4 border-l-error md:border-l-transparent" : "");
 
   const containerClasses = `bg-surface-container-lowest border border-outline-variant p-md rounded-lg shadow-sm hover:shadow-md transition-standard group flex items-start justify-between gap-md ${borderLeftClass}`;
 
-  // Checkbox classes
   const checkboxClasses = isActive
     ? "mt-1 w-6 h-6 md:w-5 md:h-5 border-2 border-primary rounded flex items-center justify-center cursor-pointer hover:bg-surface-container-low transition-standard shrink-0"
     : "mt-1 w-6 h-6 md:w-5 md:h-5 border-2 border-outline rounded flex items-center justify-center cursor-pointer hover:border-primary transition-standard shrink-0";
 
-  // Priority classes and icons for desktop
   const priorityClasses = priority === 'High'
     ? "text-on-primary bg-primary"
     : "text-secondary bg-secondary-container";
@@ -106,19 +100,16 @@ export function TaskCard({
   return (
     <div className={containerClasses}>
       <div className="flex items-start gap-md w-full min-w-0">
-        {/* Checkbox */}
         <div className={checkboxClasses} onClick={onToggleStatus} title="Mark as completed">
           <span className="material-symbols-outlined text-primary text-sm md:text-[14px] hidden group-hover:block">check</span>
         </div>
 
-        {/* Info */}
         <div className="flex-1 min-w-0 space-y-xs">
           <div className="flex justify-between items-start gap-sm">
             <h3 className="text-body-lg md:text-body-md font-semibold md:font-bold text-on-surface group-hover:text-primary transition-standard truncate">
               {title}
             </h3>
 
-            {/* Mobile Priority Badges */}
             {priority === 'High' && (
               <span className="text-label-sm font-label-sm text-error px-sm py-0.5 bg-error-container rounded-full md:hidden shrink-0">High</span>
             )}
@@ -135,7 +126,6 @@ export function TaskCard({
           </p>
 
           <div className="flex items-center gap-md pt-xs md:pt-0 md:mt-md">
-            {/* Mobile Date Badge */}
             {date && (
               <div className="flex items-center gap-xs text-on-surface-variant md:hidden">
                 <span className="material-symbols-outlined text-base">schedule</span>
@@ -143,7 +133,6 @@ export function TaskCard({
               </div>
             )}
 
-            {/* Desktop Date Badge */}
             {date && (
               <div className="hidden md:flex items-center gap-1 text-label-md text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded">
                 <span className="material-symbols-outlined text-[14px]">calendar_today</span>
@@ -151,7 +140,6 @@ export function TaskCard({
               </div>
             )}
 
-            {/* Desktop Priority Badge */}
             {priority && (
               <div className={`hidden md:flex items-center gap-1 text-label-md px-2 py-0.5 rounded ${priorityClasses}`}>
                 <span className="material-symbols-outlined text-[14px]">{priorityIcon}</span>

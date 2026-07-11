@@ -52,7 +52,6 @@ export function DeleteConfirmModal({
         padding: '24px',
       }}
     >
-      {/* Modal Container */}
       <div
         aria-labelledby="modal-title"
         aria-modal="true"
@@ -67,7 +66,6 @@ export function DeleteConfirmModal({
           overflow: 'hidden',
         }}
       >
-        {/* Modal Content */}
         <div style={{ padding: '32px', textAlign: 'center' }}>
           <div
             style={{
@@ -126,7 +124,6 @@ export function DeleteConfirmModal({
             will be permanently removed from our servers.
           </p>
 
-          {/* Action Buttons */}
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '24px' }}>
             <button
               type="button"
